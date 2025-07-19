@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Test script for password generator
-set -e
 
 echo "Running password generator tests..."
 
@@ -48,7 +47,7 @@ test_password_properties() {
     echo -n "Testing: $test_name... "
     
     # Generate password and capture output
-    output=$($PASSGEN $args 2>/dev/null | tail -1 | cut -d' ' -f2-)
+    output=$($PASSGEN $args 2>/dev/null | grep "^1:" | cut -d' ' -f2-)
     
     # Check if output exists
     if [ -z "$output" ]; then
@@ -69,7 +68,7 @@ test_password_properties() {
     has_upper=$(echo "$output" | grep -q '[A-Z]' && echo true || echo false)
     has_lower=$(echo "$output" | grep -q '[a-z]' && echo true || echo false)
     has_number=$(echo "$output" | grep -q '[0-9]' && echo true || echo false)
-    has_special=$(echo "$output" | grep -q '[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]' && echo true || echo false)
+    has_special=$(echo "$output" | grep -q '[^A-Za-z0-9]' && echo true || echo false)
     
     # Check excluded characters
     has_excluded=$(echo "$output" | grep -q '[0OIl1]' && echo true || echo false)
@@ -114,9 +113,14 @@ test_password_properties "Default password (12 chars, no special)" "" 12 false
 test_password_properties "Custom length (8 chars)" "-l 8" 8 false
 test_password_properties "Custom length (20 chars)" "-l 20" 20 false
 
+# Test boundary conditions
+test_password_properties "Minimum length (3 chars)" "-l 3" 3 false
+test_password_properties "Maximum length (128 chars)" "-l 128" 128 false
+
 # Test with special characters
 test_password_properties "With special chars (12 chars)" "-s" 12 true
 test_password_properties "With special chars (16 chars)" "-l 16 -s" 16 true
+test_password_properties "Minimum length with special chars (4 chars)" "-l 4 -s" 4 true
 
 echo ""
 echo "=== Error Handling Tests ==="
@@ -133,11 +137,22 @@ run_test "Invalid count (too low)" "$PASSGEN -c 0" 1
 # Test invalid count (too high)
 run_test "Invalid count (too high)" "$PASSGEN -c 200" 1
 
+# Test boundary values for count
+run_test "Valid count boundary (1)" "$PASSGEN -c 1" 0
+run_test "Valid count boundary (100)" "$PASSGEN -c 100" 0
+
 # Test special chars with insufficient length
 run_test "Special chars with length 3" "$PASSGEN -l 3 -s" 1
 
 # Test invalid option
 run_test "Invalid option" "$PASSGEN -x" 1
+
+# Test invalid numeric arguments
+run_test "Non-numeric length" "$PASSGEN -l abc" 1
+run_test "Non-numeric count" "$PASSGEN -c xyz" 1
+
+# Test combination of valid arguments
+run_test "All valid options combined" "$PASSGEN -l 16 -s -c 3" 0
 
 echo ""
 echo "=== Multiple Password Generation Tests ==="
@@ -146,14 +161,44 @@ echo "=== Multiple Password Generation Tests ==="
 run_test "Generate 3 passwords" "$PASSGEN -c 3"
 run_test "Generate 5 passwords with special chars" "$PASSGEN -c 5 -s"
 
+# Test that multiple passwords are unique
+echo -n "Testing: Multiple passwords uniqueness... "
+passwords=$($PASSGEN -c 10 2>/dev/null | grep "^[0-9]*:" | cut -d' ' -f2-)
+unique_count=$(echo "$passwords" | sort -u | wc -l)
+total_count=$(echo "$passwords" | wc -l)
+
+if [ $unique_count -eq $total_count ]; then
+    echo -e "${GREEN}PASS${NC}"
+    ((TESTS_PASSED++))
+else
+    echo -e "${RED}FAIL${NC} (generated $unique_count unique passwords out of $total_count)"
+    ((TESTS_FAILED++))
+fi
+
+echo ""
+echo "=== Character Exclusion Tests ==="
+
+# Test that excluded characters never appear in a large sample
+echo -n "Testing: Excluded characters (0, O, I, l, 1) never appear... "
+large_sample=$($PASSGEN -c 50 -l 20 -s 2>/dev/null | grep "^[0-9]*:" | cut -d' ' -f2- | tr -d '\n')
+excluded_found=$(echo "$large_sample" | grep -q '[0OIl1]' && echo true || echo false)
+
+if [ "$excluded_found" = "false" ]; then
+    echo -e "${GREEN}PASS${NC}"
+    ((TESTS_PASSED++))
+else
+    echo -e "${RED}FAIL${NC} (found excluded characters in sample)"
+    ((TESTS_FAILED++))
+fi
+
 echo ""
 echo "=== Randomness Tests ==="
 
 # Test that multiple runs produce different passwords
 echo -n "Testing: Password randomness... "
-pass1=$($PASSGEN 2>/dev/null | tail -1 | cut -d' ' -f2-)
-pass2=$($PASSGEN 2>/dev/null | tail -1 | cut -d' ' -f2-)
-pass3=$($PASSGEN 2>/dev/null | tail -1 | cut -d' ' -f2-)
+pass1=$($PASSGEN 2>/dev/null | grep "^1:" | cut -d' ' -f2-)
+pass2=$($PASSGEN 2>/dev/null | grep "^1:" | cut -d' ' -f2-)
+pass3=$($PASSGEN 2>/dev/null | grep "^1:" | cut -d' ' -f2-)
 
 if [ "$pass1" != "$pass2" ] && [ "$pass1" != "$pass3" ] && [ "$pass2" != "$pass3" ]; then
     echo -e "${GREEN}PASS${NC}"
