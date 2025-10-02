@@ -1,6 +1,6 @@
 # Passgen
 
-A secure password generator written in Go that creates cryptographically strong passwords.
+A secure, **privacy-focused** password generator written in Go that creates cryptographically strong passwords — all generated **locally on your machine** with no tracking, logging, or external API calls.
 
 ## Features
 
